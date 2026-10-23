@@ -466,7 +466,7 @@ Windows/macOS 同口径）。包内 `Version` 把预发布后缀的 `-` 换成 `
 
 **设置程序是私有仓**：没配 `WIND_REPOS_TOKEN`（fork）时整个 Linux 构建跳过并告警，不出缺设置入口的残缺包。
 
-**未做**：rpm（Fedora/openSUSE）与 Arch（PKGBUILD）需各自发行版实测；apt 仓库（签名密钥与托管）；客户端在线升级对 Linux 的消费
+**未做**：rpm（Fedora/openSUSE）与 Arch（原生构建方案见 [archlinux-packaging.md](archlinux-packaging.md)，尚需发行版实测）；apt 仓库（签名密钥与托管）；客户端在线升级对 Linux 的消费
 （`latest-linux.json` 已就位，设置程序侧尚无读取方，升级暂走 apt/手动下载）；Wayland。
 
 **已知风险（审查结论，未处理）**：
@@ -495,4 +495,3 @@ Windows/macOS 同口径）。包内 `Version` 把预发布后缀的 `-` 换成 `
 - **包名保持 `windinput`**：不改 `fcitx5-<名>` 形式——这个包不只是 addon，还带服务、设置程序与词库；已部署的测试机以此名升级。
   日后若拆包，再按 `fcitx5-windinput`（addon）+ `windinput`（服务 / 数据）拆。
 - **不用 AppImage / Flatpak / Snap**，也不用 `alien` 转格式；将来做 rpm 要在 Fedora 容器里独立构建、独立实测。
-

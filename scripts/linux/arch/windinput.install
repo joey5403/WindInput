@@ -1,0 +1,16 @@
+_windinput_stop_service() {
+  pkill -x -f '/usr/lib/windinput/wind_input( --restarted)?' 2>/dev/null || true
+}
+
+post_install() {
+  echo '在 Fcitx5 配置中添加「清风输入法」；首次安装请重新登录。'
+}
+
+post_upgrade() {
+  _windinput_stop_service
+  echo '已升级清风输入法；请重启 Fcitx5（fcitx5 -rd）以载入新版 addon。'
+}
+
+post_remove() {
+  _windinput_stop_service
+}

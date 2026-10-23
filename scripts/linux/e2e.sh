@@ -14,14 +14,28 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-eval "$("$REPO/scripts/linux/bootstrap-sdk.sh" env)"
-SDK_ROOT="$WIND_LINUX_SDK/root"
-MULTIARCH="$(gcc -print-multiarch 2>/dev/null || echo x86_64-linux-gnu)"
+if [[ "${WIND_E2E_SYSTEM_FCITX:-0}" == 1 ]]; then
+    # Arch 使用本机 Fcitx5，不引入 Ubuntu apt 解包的 SDK。
+    command -v fcitx5 >/dev/null || { echo 'E2E FAIL: 系统缺 fcitx5'; exit 1; }
+    SDK_ROOT=/usr
+    FCITX_SYSTEM_LIBDIR=/usr/lib/fcitx5
+    FCITX_SYSTEM_DATADIR=/usr/share/fcitx5
+    XVFB_CMD=Xvfb
+    E2E_PYTHON=python3
+else
+    eval "$("$REPO/scripts/linux/bootstrap-sdk.sh" env)"
+    SDK_ROOT="$WIND_LINUX_SDK/root"
+    MULTIARCH="$(gcc -print-multiarch 2>/dev/null || echo x86_64-linux-gnu)"
+    FCITX_SYSTEM_LIBDIR="$SDK_ROOT/usr/lib/$MULTIARCH/fcitx5"
+    FCITX_SYSTEM_DATADIR="$SDK_ROOT/usr/share/fcitx5"
+    XVFB_CMD=Xvfb-wind
+    E2E_PYTHON="$WIND_LINUX_SDK/venv/bin/python"
+fi
 TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/wi-tgt-linux-wt}"
 # 构建目录可覆盖：同一工作树里并发跑多份 e2e（或拿变异版 addon 验用例）时各用各的，
 # 免得一份的构建把另一份正在加载的 .so 换掉。
 ADDON_BUILD="${WIND_E2E_ADDON_BUILD:-$REPO/wind_linux/build/cmake}"
-SERVICE_BIN="$TARGET_DIR/debug/wind_input"
+SERVICE_BIN="${WIND_E2E_SERVICE:-$TARGET_DIR/debug/wind_input}"
 DATA_DIR="${WIND_E2E_DATA:-$REPO/build_dev/data}"
 # 设置程序（兄弟仓库 wind-setting）：「从输入法打开设置」用例要真的把它拉起来。
 SETTING_REPO="$(cd "$REPO/.." && pwd)/wind-setting"
@@ -188,7 +202,7 @@ ShareInputState=No
 EOF
 
 # ── 在私有会话总线里起服务 + fcitx5 + 客户端 ─────────────────────────
-export W SDK_ROOT MULTIARCH ADDON_BUILD REPO
+export W SDK_ROOT FCITX_SYSTEM_LIBDIR FCITX_SYSTEM_DATADIR XVFB_CMD E2E_PYTHON ADDON_BUILD REPO
 dbus-run-session -- bash -c '
 set -euo pipefail
 export WIND_INPUT_RUNTIME_DIR="$W/rt"
@@ -207,7 +221,7 @@ COMP=""
 if [[ "${WIND_E2E_X11:-1}" != 0 ]]; then
     XN=$(( 60 + $$ % 30 ))
     while [[ -e /tmp/.X11-unix/X$XN ]]; do XN=$((XN + 1)); done
-    Xvfb-wind ":$XN" -screen 0 1280x800x24 -nolisten tcp -xkbdir /usr/share/X11/xkb \
+    "$XVFB_CMD" ":$XN" -screen 0 1280x800x24 -nolisten tcp -xkbdir /usr/share/X11/xkb \
         >"$W/xvfb.log" 2>&1 &
     XVFB=$!
     for _ in $(seq 1 50); do [[ -e /tmp/.X11-unix/X$XN ]] && break; sleep 0.1; done
@@ -263,8 +277,8 @@ fi
 export FCITX_CONFIG_HOME="$W/fcitx"
 # addon 收到 settings.open 时启动它（不设则是安装路径 /usr/lib/windinput/wind_setting）。
 export WIND_INPUT_SETTING="$W/svc/wind_setting"
-export FCITX_ADDON_DIRS="$ADDON_BUILD:$SDK_ROOT/usr/lib/$MULTIARCH/fcitx5"
-export FCITX_DATA_DIRS="$ADDON_BUILD/share/fcitx5:$SDK_ROOT/usr/share/fcitx5"
+export FCITX_ADDON_DIRS="$ADDON_BUILD:$FCITX_SYSTEM_LIBDIR"
+export FCITX_DATA_DIRS="$ADDON_BUILD/share/fcitx5:$FCITX_SYSTEM_DATADIR"
 # kimpanel：客户端扮演 KDE/GNOME 的面板，点状态区动作「清风输入法设置」、听当前输入法图标
 # （随中英模式切换的 windinput-zh / windinput-en）。
 # 菜单空闲超时调短到 5 秒，好让「超时自动收起」这条兜底在 e2e 里跑得到（出厂 60 秒）。
@@ -287,7 +301,7 @@ done
 echo "[e2e] fcitx5 已就绪 (pid $FCITX)"
 
 set +e
-"$WIND_LINUX_SDK/venv/bin/python" "$REPO/scripts/linux/e2e_client.py"
+"$E2E_PYTHON" "$REPO/scripts/linux/e2e_client.py"
 RC=$?
 set -e
 kill $FCITX $(cat "$W/svc.pid" 2>/dev/null) $COMP $XVFB 2>/dev/null || true

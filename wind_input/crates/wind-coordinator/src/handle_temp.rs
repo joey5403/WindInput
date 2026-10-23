@@ -893,7 +893,8 @@ impl Coordinator {
                     KeyAction::Consumed
                 }
             }
-            k if let Some(ch) = numpad_char(k) => {
+            k if numpad_char(k).is_some() => {
+                let ch = numpad_char(k).expect("guard checked numpad key");
                 // 小键盘 direct 语义（follow_main 时键已在入口归一化为主键盘键，走上面的数字
                 // 选词臂）：拼音缓冲是**编码**，数字不是合法拼音 → 顶屏「已转换前缀 + 当前高亮
                 // 候选」再接着输出该字符并退出，已打的码不丢。
@@ -987,8 +988,11 @@ impl Coordinator {
             // 与它们本就不相交；真正需要夺回来的只有兜底臂那条「其它键 → 上屏高亮候选」，
             // `;` 正是在那里被当成次选键、把首选打了出去。
             _ if data.modifiers & MOD_SHORTCUT == 0
-                && let Some(ch) = self.temp_pinyin_code_char(state, data) =>
+                && self.temp_pinyin_code_char(state, data).is_some() =>
             {
+                let ch = self
+                    .temp_pinyin_code_char(state, data)
+                    .expect("guard checked temp pinyin code char");
                 preedit_cursor::BufEdit::new(
                     &mut state.temp_pinyin_buffer,
                     &mut state.temp_pinyin_cursor,
@@ -1768,7 +1772,8 @@ impl Coordinator {
                 Self::temp_english_insert(state, '0');
                 refresh(self, state)
             }
-            k if let Some(ch) = numpad_char(k) => {
+            k if numpad_char(k).is_some() => {
+                let ch = numpad_char(k).expect("guard checked numpad key");
                 // 小键盘 direct 语义（follow_main 时键已在入口归一化成主键盘键，不到达这里）：
                 // 临英缓冲是**文本**不是编码，数字/运算符都是合法内容 → 直接入缓冲，
                 // 「英文数字连输」得以在默认配置下可用。此前小键盘落到下方标点臂被

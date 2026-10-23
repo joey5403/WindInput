@@ -1,0 +1,70 @@
+# Arch 原生包。由 scripts/linux/package-arch.sh 设置源码与数据目录后调用。
+pkgname=fcitx5-windinput
+pkgver=${WIND_ARCH_PKGVER:?run scripts/linux/package-arch.sh}
+pkgrel=1
+pkgdesc='清风输入法 Fcitx5 Linux 原生版'
+arch=('x86_64')
+url='https://windinput.com'
+license=('GPL-3.0-or-later')
+depends=('fcitx5' 'fontconfig' 'libxcb' 'wayland' 'glibc' 'gcc-libs' 'hicolor-icon-theme' 'libxkbcommon' 'procps-ng')
+optdepends=(
+  'fcitx5-configtool: 添加清风输入法到输入法组'
+  'fcitx5-gtk: GTK 输入支持'
+  'fcitx5-qt: Qt 输入支持'
+  'wqy-microhei: 中文字体（或安装其他 CJK 字体）'
+  'xclip: X11 剪贴板'
+  'wl-clipboard: Wayland 剪贴板'
+  'xdg-utils: 打开链接与关联文件'
+  'xdg-desktop-portal: 文件对话框（需桌面后端）'
+  'zenity: 文件对话框后备程序'
+)
+makedepends=('base-devel' 'rust' 'cmake' 'ninja' 'pkgconf' 'fcitx5' 'libxcb' 'wayland')
+provides=('windinput')
+conflicts=('windinput' 'windinput-bin' 'fcitx5-windinput-bin')
+options=('!strip' '!debug' '!lto' '!buildflags')
+install=windinput.install
+source=()
+sha256sums=()
+
+build() {
+  : "${WIND_ARCH_REPO:?}" "${WIND_ARCH_SETTING:?}" "${WIND_ARCH_DATA:?}"
+  local root=$WIND_ARCH_REPO
+  local target=${WIND_ARCH_TARGET:-$srcdir/target}
+  local setting_target=${WIND_ARCH_SETTING_TARGET:-$srcdir/setting-target}
+  local cmake_dir=${WIND_ARCH_CMAKE:-$srcdir/cmake}
+  unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
+  export CFLAGS='-O2 -pipe -march=x86-64'
+  export CXXFLAGS=$CFLAGS
+  export LDFLAGS='-Wl,-z,relro,-z,now'
+  # Rust 依赖含 ring 的 C/汇编对象；makepkg 的全局 -flto 会让链接期符号丢失。
+  # 构建机还可能将 -march=native 写入全局 CFLAGS；发布包不可继承此标志。
+  (cd "$root/wind_input" && CARGO_TARGET_DIR="$target" cargo build --release -p wind_service --features linux-host)
+  (cd "$WIND_ARCH_SETTING" && WIND_APP_VERSION="$(cat "$root/docs/VERSION")" CARGO_TARGET_DIR="$setting_target" cargo build --release)
+  cmake -S "$root/wind_linux" -B "$cmake_dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib
+  cmake --build "$cmake_dir" --parallel 4
+}
+
+check() {
+  ctest --test-dir "${WIND_ARCH_CMAKE:-$srcdir/cmake}" --output-on-failure
+}
+
+package() {
+  local root=$WIND_ARCH_REPO
+  local target=${WIND_ARCH_TARGET:-$srcdir/target}
+  local setting_target=${WIND_ARCH_SETTING_TARGET:-$srcdir/setting-target}
+  local cmake_dir=${WIND_ARCH_CMAKE:-$srcdir/cmake}
+  DESTDIR="$pkgdir" cmake --install "$cmake_dir"
+  install -Dm755 "$target/release/wind_input" "$pkgdir/usr/lib/windinput/wind_input"
+  install -Dm755 "$setting_target/release/wind_setting" "$pkgdir/usr/lib/windinput/wind_setting"
+  install -d "$pkgdir/usr/lib/windinput/data"
+  cp -a "$WIND_ARCH_DATA/." "$pkgdir/usr/lib/windinput/data/"
+  bash "$root/scripts/lib/gen-compat.sh" linux "$WIND_ARCH_DATA/compat.toml"  "$pkgdir/usr/lib/windinput/data/compat.toml"
+  install -Dm644 "$root/scripts/linux/pkg/windinput-setting.desktop"  "$pkgdir/usr/share/applications/windinput-setting.desktop"
+  install -Dm644 "$root/scripts/linux/pkg/windinput-import.desktop"  "$pkgdir/usr/share/applications/windinput-import.desktop"
+  install -Dm644 "$root/scripts/linux/pkg/windinput-mime.xml"  "$pkgdir/usr/share/mime/packages/windinput.xml"
+  install -Dm644 "$root/wind_linux/README.md" "$pkgdir/usr/share/doc/windinput/README.md"
+  install -Dm644 "$root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  find "$pkgdir" -type d -exec chmod 755 {} +
+  find "$pkgdir" -type f -perm /111 -exec chmod 755 {} +
+  find "$pkgdir" -type f ! -perm /111 -exec chmod 644 {} +
+}
